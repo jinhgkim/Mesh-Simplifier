@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>CPSC 424 Assignment 7 2025WT2</title>
+    <meta charset="UTF-8">
+
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+  </head>
+  <body>
+    <div class="container">
+      <div class="row" style="margin:20px">
+          <h2>CPSC 424 Assignment 7 Simplification</h2>
+      </div>
+      <div class="row" style="margin-left: 20px">
+        <div style="margin-right: 20px;">
+          <input type="file" id="modelFile" class="form-control-file">
+        </div>
+        <div style="margin-right: 20px;">
+          <div class="input-group input-group-sm mb-3">
+            <button type="button" id="visBtn" class="btn btn-outline-secondary btn-sm" style="background: #E9ECEF">Visualize edges</button>
+            <input type="text" value="0" id="visInput" class="form-control" aria-label="Small" aria-describedby="inputGroup-sizing-sm" style="text-align:right; width:100px">
+            <button type="button" id="visIncrease" class="btn btn-outline-secondary btn-sm" style="width:25px; background: #E9ECEF">+</button>
+            <button type="button" id="visDecrease" class="btn btn-outline-secondary btn-sm" style="width:25px; background: #E9ECEF">-</button>
+          </div>
+        </div>
+        <div style="margin-right: 20px;">
+          <div class="input-group input-group-sm mb-3">
+            <button type="button" id="simpBtn" class="btn btn-outline-secondary btn-sm" style="background: #E9ECEF">Simplifier edges</button>
+            <input type="text" value="0" id="simpInput" class="form-control" aria-label="Small" aria-describedby="inputGroup-sizing-sm" style="text-align:right; width:100px">
+            <button type="button" id="simpIncrease" class="btn btn-outline-secondary btn-sm" style="width:25px; background: #E9ECEF">+</button>
+            <button type="button" id="simpDecrease" class="btn btn-outline-secondary btn-sm" style="width:25px; background: #E9ECEF">-</button>
+          </div>
+        </div>
+        <div style="margin-right: 20px;">
+          <div class="input-group input-group-sm mb-3">
+            <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" id="ModeDropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" style="background: #E9ECEF">
+              Single
+            </button>
+            <div class="dropdown-menu" id="modeDropdownMenu" aria-labelledby="dropdownMenuButton">
+              <li class="dropdown-item">Single</li>
+              <li class="dropdown-item">Edge-Length</li>
+              <li class="dropdown-item">QEM</li>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="row">
+        <canvas id="glCanvas" style="width: 100%; height: 100%">
+        </canvas>
+      </div>
+    </div>
+
+    <script id="vertex-shader" type="x-shader/x-vertex">#version 300 es
+      in vec3 vertexPosition;
+      in vec3 vertexNormal;
+
+      uniform mat4 projectionMatrix;
+      uniform mat4 viewMatrix;
+      uniform mat4 modelMatrix;
+      uniform vec3 lightDirection;
+
+      out vec3 normal;
+      out vec3 lightDir;
+
+      void main() {
+        vec4 nv = viewMatrix * modelMatrix * vec4(vertexNormal, 0.0);
+        normal = vec3(nv);
+
+        vec4 lv = viewMatrix * vec4(lightDirection, 0.0);
+        lightDir = vec3(lv);
+
+        gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(vertexPosition, 1.0);
+      }
+    </script>
+
+    <script id="fragment-shader" type="x-shader/x-fragment">#version 300 es
+      precision highp float;
+      precision highp int;
+
+      uniform vec3 color;
+
+      in vec3 normal;
+      in vec3 lightDir;
+
+      out vec4 out_FragColor;
+
+      void main() {
+        vec3 diffuse = 0.5 * color * max(0.0, dot(normalize(normal), normalize(lightDir)));
+        vec3 final_color = diffuse + vec3(0.4, 0.4, 0.4);
+        out_FragColor = vec4(final_color, 1.0);
+      }
+    </script>
+
+    <script id="vertex-shader-line" type="x-shader/x-vertex">#version 300 es
+      in vec3 vertexPosition;
+
+      uniform mat4 projectionMatrix;
+      uniform mat4 viewMatrix;
+      uniform mat4 modelMatrix;
+
+      void main() {
+        gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(vertexPosition, 1.0);
+      }
+    </script>
+
+    <script id="fragment-shader-line" type="x-shader/x-fragment">#version 300 es
+      precision highp float;
+      precision highp int;
+
+      uniform vec3 color;
+      out vec4 out_FragColor;
+
+      void main() {
+        out_FragColor = vec4(color, 1.0);
+      }
+    </script>
+
+    <script id="vertex-shader-edge" type="x-shader/x-vertex">#version 300 es
+      in vec3 vertexPosition;
+      in vec3 color;
+
+      uniform mat4 projectionMatrix;
+      uniform mat4 viewMatrix;
+      uniform mat4 modelMatrix;
+
+      out vec3 vColor;
+
+      void main() {
+        gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(vertexPosition, 1.0);
+        vColor = color;
+      }
+    </script>
+
+    <script id="fragment-shader-edge" type="x-shader/x-fragment">#version 300 es
+      precision highp float;
+      precision highp int;
+
+      in vec3 vColor;
+      out vec4 out_FragColor;
+
+      void main() {
+        out_FragColor = vec4(vColor, 1.0);
+      }
+    </script>
+
+    <!-- jQuery first, then Popper.js, then Bootstrap JS -->
+    <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js" integrity="sha384-UO2eT0CpHqdSJQ6hJty5KVphtPhzWj9WO1clHTMGa3JDZwrnQq4sF86dIHNDz0W1" crossorigin="anonymous"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js" integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM" crossorigin="anonymous"></script>
+    
+    <script src="https://unpkg.com/mathjs@14.3.1/lib/browser/math.js"></script>
+
+    <!-- External imports -->
+    <script src="js/external/heap.js"></script>
+    <script src="js/external/priorityQueue.js"></script>
+
+    <script src="js/renderer/Vector3D.js"></script>
+    <script src="js/renderer/renderUtils.js"></script>
+    <script src="js/renderer/WebGL.js"></script>
+    <script src="js/renderer/OBJLoader.js"></script>
+    <script src="js/Mesh.js"></script>
+    <script src="js/simplifier.js"></script>
+    <script src="js/solver.js"></script>
+    <script src="js/main.js"></script>
+
+  </body>
+</html>
