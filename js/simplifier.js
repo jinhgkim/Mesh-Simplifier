@@ -185,20 +185,10 @@ function Simplifier(input_mesh) {
      * Hint: Does everything need to be recomputed? Think about how to update the
      * priority queue and map efficiently.
      */
-    this.updateEdgeCosts = function (verts, newVertPos, pq, mp) {
-        for (let i = 0; i < verts.length; i++) {
-            let vert = verts[i];
-            let vert_pos = vert.getPos();
-            let new_cost = vert_pos.subtract(newVertPos).norm();
-
-            pq.remove(x => x.edge === vert.getEdge());
-            pq.push({
-                edge: vert.getEdge(),
-                cost: new_cost
-            });
-
-            console.log("Updating edge " + vert.getEdge().getId() + " with new cost " + new_cost);
-        }
+    this.updateEdgeCosts = function () {
+        let validEdges = this.getValidEdges();
+        let [pq, mp] = this.computeEdgeCosts(validEdges);
+        return [pq, mp];
     }
 
     /** ---------------------------------------------------------------------
@@ -234,49 +224,32 @@ function Simplifier(input_mesh) {
             return this.mesh;
         }
         else if (this.mode == "Edge-Length") {
-
-            for (let i = 0; i < numEdges; i++) {
-                // Get all the valid edges in the mesh
-                let validEdges = this.getValidEdges();
-                if (validEdges.length == 0) {
-                    console.log("No valid edges to collapse");
-                    break;
-                }
-
-                // Compute the costs of all valid edges
-                let [pq, mp] = this.computeEdgeCosts(validEdges);
-                if (pq.size() == 0) {
-                    console.log("Priority queue is empty.");
-                    break;
-                }
-
-                console.log("priority queue: \n" + pq.toArray().map(e => e.edge.getId() + " " + e.cost + "\n"));
-
-                // Pop the edge with the lowest cost
-                let top = pq.pop();
-                let edge = top.edge;
-                let cost = top.cost;
-
-                // Get the two vertices of the edge and their neighbors
-                let [v1, v2] = [edge.getOrigin(), edge.getTwin().getOrigin()];
-                let v1_neighbors = v1.getVertices();
-                let v2_neighbors = v2.getVertices();
-                let verts = v1_neighbors.concat(v2_neighbors);
-                verts = [...new Set(verts)]; // Remove duplicates
-
-                let newVertPos = mp.get(edge.getId());
-
-                console.log("Collapsing edge " + edge.getId() + " with cost " + cost);
-                this.collapseEdge(edge, newVertPos);
-
-                console.log("v1 is " + v1.getId() + " and neighbors of v1: " + v1_neighbors.map(v => v.getId()));
-                console.log("v2 is " + v2.getId() + " and neighbors of v2: " + v2_neighbors.map(v => v.getId()));
-                console.log("Updating edge costs for these vertices: " + verts.map(v => v.getId()));
-                this.updateEdgeCosts(verts, newVertPos, pq, mp);
-
-                console.log("Updated priority queue: \n" + pq.toArray().map(e => e.edge.getId() + " " + e.cost + "\n"));
+            // Get all the valid edges in the mesh
+            let validEdges = this.getValidEdges();
+            if (validEdges.length == 0) {
+                console.log("No valid edges to collapse");
+                return this.mesh;
             }
 
+            // Compute the costs of all valid edges
+            let [pq, mp] = this.computeEdgeCosts(validEdges);
+
+            for (let i = 0; i < numEdges; i++) {
+                if (pq.size() == 0) {
+                    console.log("Priority queue is empty, no edge to collapse");
+                    return this.mesh;
+                }
+
+                let top = pq.pop();
+                let edge = top.edge;
+
+                // Collapse the edge with the lowest cost
+                this.collapseEdge(edge, mp.get(edge.getId()));
+                console.log("Collapsing edge " + edge.getId() + " with cost " + top.cost);
+
+                // Updae the priority queue and map
+                [pq, mp] = this.updateEdgeCosts();
+            }
             return this.mesh;
         }
         else if (this.mode == "QEM") {
