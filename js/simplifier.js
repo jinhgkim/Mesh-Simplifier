@@ -62,6 +62,11 @@ function Simplifier(input_mesh) {
         let f1_verts = [f1.vert(0), f1.vert(1), f1.vert(2)];
         let f2_verts = [f2.vert(0), f2.vert(1), f2.vert(2)];
 
+        if (new Set(f1_verts).size !== f1_verts.length || new Set(f2_verts).size !== f2_verts.length) {
+            console.log("Duplicate vertices in face." + edge.getId() + ": Invalid edge.");
+            return false;
+        }
+
         // Get the third vertex of each face
         let f1_third_vert = f1_verts.filter(v => v != v1 && v != v2)[0];
         let f2_third_vert = f2_verts.filter(v => v != v1 && v != v2)[0];
@@ -150,11 +155,27 @@ function Simplifier(input_mesh) {
      *                    mp = Map of edge ids to their corresponding new vertex positions
      */
     this.computeEdgeCosts = function (edges) {
-        //@@@@@
-        // YOUR CODE HERE
-        //@@@@@
+        let pq = new PriorityQueue((a, b) => a.cost - b.cost);
+        let mp = new Map();
 
-        return null; // REPLACE THIS!
+        if (this.mode == "Edge-Length") {
+            for (let i = 0; i < edges.length; i++) {
+                let edge = edges[i];
+                let v1_pos = edge.getOrigin().getPos();
+                let v2_pos = edge.getTwin().getOrigin().getPos();
+                let length = v1_pos.subtract(v2_pos).norm();
+                let mid = v1_pos.add(v2_pos).multiply(0.5);
+
+                pq.push({
+                    edge: edge,
+                    cost: length
+                });
+                mp.set(edge.getId(), mid);
+            }
+
+        }
+
+        return [pq, mp];
     }
 
     /** ---------------------------------------------------------------------
@@ -164,10 +185,20 @@ function Simplifier(input_mesh) {
      * Hint: Does everything need to be recomputed? Think about how to update the
      * priority queue and map efficiently.
      */
-    this.updateEdgeCosts = function () {
-        //@@@@@
-        // YOUR CODE HERE
-        //@@@@@
+    this.updateEdgeCosts = function (verts, newVertPos, pq, mp) {
+        for (let i = 0; i < verts.length; i++) {
+            let vert = verts[i];
+            let vert_pos = vert.getPos();
+            let new_cost = vert_pos.subtract(newVertPos).norm();
+
+            pq.remove(x => x.edge === vert.getEdge());
+            pq.push({
+                edge: vert.getEdge(),
+                cost: new_cost
+            });
+
+            console.log("Updating edge " + vert.getEdge().getId() + " with new cost " + new_cost);
+        }
     }
 
     /** ---------------------------------------------------------------------
@@ -183,13 +214,14 @@ function Simplifier(input_mesh) {
 
         console.log("Simplifying mesh of " + numEdges + " edges");
 
-        if (this.mode == "Single") {
 
+        if (this.mode == "Single") {
+            // Get all the valid edges in the mesh
             let validEdges = this.getValidEdges();
-            console.log("Found " + validEdges.length + " valid edges" + " out of " + this.mesh.getEdges().length);
-            // for (let i = 0; i < validEdges.length; i++) {
-            //     console.log("Valid edge " + validEdges[i].getId());
-            // }
+            if (validEdges.length == 0) {
+                console.log("No valid edges to collapse");
+                return this.mesh;
+            }
 
             // Collapse the first valid edge
             let edge = validEdges[0];
@@ -202,9 +234,50 @@ function Simplifier(input_mesh) {
             return this.mesh;
         }
         else if (this.mode == "Edge-Length") {
-            //@@@@@
-            // YOUR CODE HERE
-            //@@@@@
+
+            for (let i = 0; i < numEdges; i++) {
+                // Get all the valid edges in the mesh
+                let validEdges = this.getValidEdges();
+                if (validEdges.length == 0) {
+                    console.log("No valid edges to collapse");
+                    break;
+                }
+
+                // Compute the costs of all valid edges
+                let [pq, mp] = this.computeEdgeCosts(validEdges);
+                if (pq.size() == 0) {
+                    console.log("Priority queue is empty.");
+                    break;
+                }
+
+                console.log("priority queue: \n" + pq.toArray().map(e => e.edge.getId() + " " + e.cost + "\n"));
+
+                // Pop the edge with the lowest cost
+                let top = pq.pop();
+                let edge = top.edge;
+                let cost = top.cost;
+
+                // Get the two vertices of the edge and their neighbors
+                let [v1, v2] = [edge.getOrigin(), edge.getTwin().getOrigin()];
+                let v1_neighbors = v1.getVertices();
+                let v2_neighbors = v2.getVertices();
+                let verts = v1_neighbors.concat(v2_neighbors);
+                verts = [...new Set(verts)]; // Remove duplicates
+
+                let newVertPos = mp.get(edge.getId());
+
+                console.log("Collapsing edge " + edge.getId() + " with cost " + cost);
+                this.collapseEdge(edge, newVertPos);
+
+                console.log("v1 is " + v1.getId() + " and neighbors of v1: " + v1_neighbors.map(v => v.getId()));
+                console.log("v2 is " + v2.getId() + " and neighbors of v2: " + v2_neighbors.map(v => v.getId()));
+                console.log("Updating edge costs for these vertices: " + verts.map(v => v.getId()));
+                this.updateEdgeCosts(verts, newVertPos, pq, mp);
+
+                console.log("Updated priority queue: \n" + pq.toArray().map(e => e.edge.getId() + " " + e.cost + "\n"));
+            }
+
+            return this.mesh;
         }
         else if (this.mode == "QEM") {
             //@@@@@
@@ -229,12 +302,16 @@ function Simplifier(input_mesh) {
      */
     this.setupVisualization = function () {
         console.log("Setting up visualization");
+        let validEdges = this.getValidEdges();
+        if (validEdges.length == 0) {
+            console.log("No valid edges to visualize");
+            return [];
+        }
+        // Compute the costs of all valid edges
+        let [pq, mp] = this.computeEdgeCosts(validEdges);
+        edge_ids = pq.toArray().map(e => e.edge.getId());
 
-        //@@@@@
-        // YOUR CODE HERE
-        //@@@@@
-
-        return [0, 1, 2]; // REPLACE THIS!
+        return edge_ids;
     }
 
     this.clear = function () {
