@@ -36,6 +36,7 @@ function Simplifier(input_mesh) {
      */
     this.getValidEdges = function () {
         let allEdges = this.mesh.getEdges();
+        // console.log("All edges length: " + allEdges.length + " All edges: " + allEdges.map(e => e.getId()));
         let validEdges = [];
 
         for (let i = 0; i < allEdges.length; i++) {
@@ -70,9 +71,12 @@ function Simplifier(input_mesh) {
         // Get the third vertex of each face
         let f1_third_vert = f1_verts.filter(v => v != v1 && v != v2)[0];
         let f2_third_vert = f2_verts.filter(v => v != v1 && v != v2)[0];
+        // console.log("f1 third vert: " + f1_third_vert.getId());
+        // console.log("f2 third vert: " + f2_third_vert.getId());
 
         // Condition 1: Third Vertices Share an Edge
         let f1_neighbor_verts = f1_third_vert.getVertices();
+        // console.log("f1 neighbor verts: " + f1_neighbor_verts.map(v => v.getId()));
 
         // console.log("Checking edge " + edge.getId() + " between vertices " + v1.getId() + " and " + v2.getId());
         // console.log("Face 1 vertices: " + f1_verts.map(v => v.getId()) +
@@ -107,17 +111,44 @@ function Simplifier(input_mesh) {
 
         let v1 = edge.getOrigin();
         let v2 = edge.getTwin().getOrigin();
+        // console.log("Collapsing edge " + edge.getId() + " between vertices " + v1.getId() + " and " + v2.getId());
 
         // Update v1 position to the new vertex location
         v1.setPos(newVertex.x(), newVertex.y(), newVertex.z());
 
-        console.log("Input edge: " + edge.getId() + " v1's half-edge: " + v1.getEdge().getId() +
-            " if they are the same, we need to update the half-edge of v1 since edge will be removed");
+        // Get faces that will be removed
+        let f1 = edge.getFace();
+        let f2 = edge.getTwin().getFace();
 
-        if (v1.getEdge().getId() == edge.getId()) {
-            // Update v1's half-edge to the next half-edge in the loop
-            v1.setEdge(edge.getPrev());
+        // Reassign v1's half-edge if it is the collapsing edge or belongs to a face that will be removed
+        let currentEdge = v1.getEdge();
+        if (currentEdge.getId() == edge.getId() ||
+            currentEdge.getFace() === f1 ||
+            currentEdge.getFace() === f2) {
+            let incidentEdges = v1.getEdges();
+            let newEdgeCandidate = null;
+            // Find a replacement half-edge whose face is not one of the ones to be removed
+            for (let i = 0; i < incidentEdges.length; i++) {
+                let candidate = incidentEdges[i];
+                if (candidate && candidate.getFace() && candidate.getFace() !== f1 && candidate.getFace() !== f2) {
+                    newEdgeCandidate = candidate;
+                    break;
+                }
+            }
+            if (newEdgeCandidate) {
+                // console.log("Reassigning v1's half-edge from edge " + currentEdge.getId() +
+                // " to edge " + newEdgeCandidate.getId());
+                v1.setEdge(newEdgeCandidate);
+            }
         }
+
+        // if (v1.getEdge().getId() == edge.getId()) {
+        //     // Update v1's half-edge to the next half-edge in the loop
+        //     console.log("v1's half-edge is: " + v1.getEdge().getId()
+        //         + " and edge is: " + edge.getId() +
+        //         ", updating v1's half-edge to " + edge.getPrev().getTwin().getId());
+        //     v1.setEdge(edge.getPrev().getTwin());
+        // }
 
         // Update all half-edges of v2 to point to updated v1 instead
         let v2_edges = v2.getEdges();
@@ -125,9 +156,27 @@ function Simplifier(input_mesh) {
             v2_edges[i].setOrigin(v1);
         }
 
+        // Connect the two half-edges of the neighbors of the collapsing edge
+        let f1_edges = [edge.getNext(), edge.getPrev()];
+        let f2_edges = [edge.getTwin().getNext(), edge.getTwin().getPrev()];
+
+        // console.log("f1_edges: " + f1_edges.map(e => e.getId()) +
+        //     ", f2_edges: " + f2_edges.map(e => e.getId()) + " shared edge: " + edge.getId() + ", " + edge.getTwin().getId());
+
+        // connect
+        f1_edges[0].getTwin().setTwin(f1_edges[1].getTwin());
+        f1_edges[1].getTwin().setTwin(f1_edges[0].getTwin());
+
+        f2_edges[0].getTwin().setTwin(f2_edges[1].getTwin());
+        f2_edges[1].getTwin().setTwin(f2_edges[0].getTwin());
+
+        // console.log("Connecting " + f1_edges[0].getTwin().getId() +
+        //     " and " + f1_edges[1].getTwin().getId() +
+        //     ", Connecting " + f2_edges[0].getTwin().getId() +
+        //     ", and " + f2_edges[1].getTwin().getId());
+
         // Remove the two faces adjacent to the collapsing edge
-        let f1 = edge.getFace();
-        let f2 = edge.getTwin().getFace();
+
         this.mesh.removeFace(f1);
         this.mesh.removeFace(f2);
 
@@ -135,7 +184,16 @@ function Simplifier(input_mesh) {
         this.mesh.removeEdge(edge);
         this.mesh.removeEdge(edge.getTwin());
 
+        // Reassign the half-edges of the verties before removing the edge
+        edge.getPrev().getOrigin().setEdge(edge.getNext().getTwin());
+        edge.getTwin().getPrev().getOrigin().setEdge(edge.getTwin().getNext().getTwin());
+        this.mesh.removeEdge(f1_edges[0]);
+        this.mesh.removeEdge(f1_edges[1]);
+        this.mesh.removeEdge(f2_edges[0]);
+        this.mesh.removeEdge(f2_edges[1]);
+
         // Remove vertex v2
+        // console.log("Removing vertex " + v2.getId());
         this.mesh.removeVertex(v2);
     }
 
@@ -245,7 +303,7 @@ function Simplifier(input_mesh) {
 
                 // Collapse the edge with the lowest cost
                 this.collapseEdge(edge, mp.get(edge.getId()));
-                console.log("Collapsing edge " + edge.getId() + " with cost " + top.cost);
+                // console.log("Collapsing edge " + edge.getId() + " with cost " + top.cost);
 
                 // Updae the priority queue and map
                 [pq, mp] = this.updateEdgeCosts();
