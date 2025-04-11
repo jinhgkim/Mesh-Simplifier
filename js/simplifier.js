@@ -142,14 +142,6 @@ function Simplifier(input_mesh) {
             }
         }
 
-        // if (v1.getEdge().getId() == edge.getId()) {
-        //     // Update v1's half-edge to the next half-edge in the loop
-        //     console.log("v1's half-edge is: " + v1.getEdge().getId()
-        //         + " and edge is: " + edge.getId() +
-        //         ", updating v1's half-edge to " + edge.getPrev().getTwin().getId());
-        //     v1.setEdge(edge.getPrev().getTwin());
-        // }
-
         // Update all half-edges of v2 to point to updated v1 instead
         let v2_edges = v2.getEdges();
         for (let i = 0; i < v2_edges.length; i++) {
@@ -232,6 +224,63 @@ function Simplifier(input_mesh) {
             }
 
         }
+        else if (this.mode == "QEM") {
+            // Compute for each valid pair (v1,v2) the contracted vertex v and its error Δ(v)
+            for (let i = 0; i < edges.length; i++) {
+                let edge = edges[i];
+                let v1 = edge.getOrigin();
+                let v2 = edge.getTwin().getOrigin();
+
+                // console.log("Qvs: " + this.QVs);
+
+                // Q = Qv1 + Qv2
+                let Q = math.add(this.QVs[v1.getId()], this.QVs[v2.getId()]);
+
+                // Solve the linear system Ax = b
+                let A = [
+                    [Q[0][0], Q[0][1], Q[0][2], Q[0][3]],
+                    [Q[1][0], Q[1][1], Q[1][2], Q[1][3]],
+                    [Q[2][0], Q[2][1], Q[2][2], Q[2][3]],
+                    [0, 0, 0, 1]
+                ];
+                let b = [0, 0, 0, 1];
+
+                let [solution_found, x] = this.solver.solve(A, b);
+                // console.log("Solution found for the linear system: " + solution_found);
+
+                // Compute the new vertex position
+                let newVertexPos = v1.getPos();
+                if (solution_found) {
+                    newVertexPos = new Vec3(x[0][0], x[1][0], x[2][0]);
+                }
+                else {
+                    newVertexPos = v1.getPos().add(v2.getPos()).multiply(0.5);
+                }
+
+                // console.log("New vertex position: " + newVertexPos.x() + ", " + newVertexPos.y() + ", " + newVertexPos.z());
+
+                // Compute the QEM cost: Δ(v) = v * Qv * v^T
+                let cost = 0;
+                let v = [newVertexPos.x(), newVertexPos.y(), newVertexPos.z(), 1];
+
+                for (let row = 0; row < 4; row++) {
+                    let sum = 0;
+                    for (let col = 0; col < 4; col++) {
+                        sum += Q[row][col] * v[col];
+                    }
+                    cost += v[row] * sum;
+                }
+
+                // console.log("Cost of edge " + edge.getId() + ": " + cost);
+
+                // Update the priority queue and map
+                pq.push({
+                    edge: edge,
+                    cost: cost
+                });
+                mp.set(edge.getId(), newVertexPos);
+            }
+        }
 
         return [pq, mp];
     }
@@ -311,9 +360,78 @@ function Simplifier(input_mesh) {
             return this.mesh;
         }
         else if (this.mode == "QEM") {
-            //@@@@@
-            // YOUR CODE HERE
-            //@@@@@
+            // Get all the valid edges in the mesh
+            let validEdges = this.getValidEdges();
+            if (validEdges.length == 0) {
+                console.log("No valid edges to collapse");
+                return this.mesh;
+            }
+
+            // Compute Qv for all the mesh vertices
+            let vertices = this.mesh.getVertices();
+            this.QVs = {};
+            for (let i = 0; i < vertices.length; i++) {
+                let v = vertices[i];
+                this.QVs[v.getId()] = [
+                    [0, 0, 0, 0],
+                    [0, 0, 0, 0],
+                    [0, 0, 0, 0],
+                    [0, 0, 0, 0]
+                ];
+            }
+            let faces = this.mesh.getFaces();
+            for (let i = 0; i < faces.length; i++) {
+                let face = faces[i];
+                let n = face.computeNormal();
+
+                let v0 = face.vert(0);
+                let v1 = face.vert(1);
+                let v2 = face.vert(2);
+
+                let p0 = v0.getPos();
+
+                let d = -n.dot(p0);
+                let p = [n.x(), n.y(), n.z(), d];
+                // Kp = p * p^T
+                let Kp = [];
+                for (let i = 0; i < 4; i++) {
+                    Kp[i] = [];
+                    for (let j = 0; j < 4; j++) {
+                        Kp[i][j] = p[i] * p[j];
+                    }
+                }
+
+
+                // Add this quadric to each vertex in the face
+                this.QVs[v0.getId()] = math.add(this.QVs[v0.getId()], Kp);
+                this.QVs[v1.getId()] = math.add(this.QVs[v1.getId()], Kp);
+                this.QVs[v2.getId()] = math.add(this.QVs[v2.getId()], Kp);
+            }
+            // console.log("QVs: " + this.QVs);
+            // console.log("QVs[0]: " + this.QVs[0]);
+
+            // Compute the costs of all valid edges
+            let [pq, mp] = this.computeEdgeCosts(validEdges);
+            // console.log("Successfully computed edge costs");
+
+            for (let i = 0; i < numEdges; i++) {
+                if (pq.size() == 0) {
+                    console.log("Priority queue is empty, no edge to collapse");
+                    return this.mesh;
+                }
+
+                let top = pq.pop();
+                let edge = top.edge;
+
+                // Collapse the edge with the lowest cost
+                // console.log("Collapsing edge " + edge.getId() + " with cost " + top.cost);
+                this.collapseEdge(edge, mp.get(edge.getId()));
+
+                // Updae the priority queue and map
+                [pq, mp] = this.updateEdgeCosts();
+            }
+            return this.mesh;
+
         }
         else {
             console.log("Invalid mode: " + this.mode);
