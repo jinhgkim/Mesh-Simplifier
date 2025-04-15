@@ -13,5 +13,11 @@ Validates and collapses a single edge while preserving manifoldness. Used for de
 ## 2. Edge-Length-Based Simplification
 Repeatedly collapses the shortest valid edge. Includes edge cost updates and visualization of the collapse priority.
 
+![edgelength_org](https://github.com/jinhgkim/Mesh-Simplifier/blob/master/img/edgelength_org.png)
+![edgelength](https://github.com/jinhgkim/Mesh-Simplifier/blob/master/img/edgelength.png)
+
 ## 3. QEM Simplification
 Implements full QEM for optimal vertex placement and edge cost. Solves a 4x4 linear system for each collapse using a provided numerical solver.
+
+![QEM_org](https://github.com/jinhgkim/Mesh-Simplifier/blob/master/img/QEM_org.png)
+![QEM](https://github.com/jinhgkim/Mesh-Simplifier/blob/master/img/QEM.png)
